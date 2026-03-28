@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/server", "crates/db", "crates/sensor-esp-32"]
+resolver = "2"
