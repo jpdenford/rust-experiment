@@ -5,7 +5,14 @@ Rough plan with intention to
 - refresh & broaden my rust knowledge through exploration.
 - prove my engineering experience can be applied to new technologies incl. my beginner/intermediate level rust.
 
-## Plan Sketch
+## Getting started
+
+```bash
+./setup-dev.sh     # creates admin-token.json and ~/.influxdb3/data
+docker compose up  # starts InfluxDB and initialises the database + table
+```
+
+InfluxDB dev token: `apiv3_dev-local-token`
 
 Rouch Client + Server model
 
@@ -26,7 +33,17 @@ Rouch Client + Server model
 
 - Safe numeric conversions
 - defensive programming (assert assumptions)
+- LLM use - avoid Agentic coding in rust. Only use it like google to ask questions if/when stuck. Need the compiler to push back to internalise the info!
 
 MVP / impl plan:
 
 1.  Rust server which persists to db.
+
+## Setup
+
+```sh
+./setup-dev.sh
+docker compose up -d
+# run the server
+cargo run --manifest-path crates/server/Cargo.toml
+```

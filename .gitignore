@@ -8,6 +8,7 @@
 # Environment & secrets
 .env
 .env.*
+admin-token.json
 
 # Editor
 .vscode/

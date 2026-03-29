@@ -1,0 +1,54 @@
+# compose.yaml
+services:
+  # Modified from the influxdb docs
+  influxdb3-core:
+    image: influxdb:3-core
+    ports:
+      - 8181:8181
+    command:
+      - influxdb3
+      - serve
+      - --node-id=node0
+      - --object-store=file
+      - --data-dir=/var/lib/influxdb3/data
+      # Note: NOT PRODUCTION READY!
+      - --admin-token-file=/run/secrets/admin-token
+    secrets:
+      - admin-token
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf -H 'Authorization: Bearer apiv3_dev-local-token' http://localhost:8181/health",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    volumes:
+      - type: bind
+        source: ~/.influxdb3/data
+        target: /var/lib/influxdb3/data
+
+  influxdb3-init:
+    image: curlimages/curl:latest
+    restart: "no"
+    depends_on:
+      influxdb3-core:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      - |
+        curl -sf -X POST http://influxdb3-core:8181/api/v3/configure/database \
+          -H 'Authorization: Bearer apiv3_dev-local-token' \
+          -H 'Content-Type: application/json' \
+          -d '{"db": "sensor-experiment"}' && echo 'Database sensor-experiment created.' && \
+        curl -sf -X POST http://influxdb3-core:8181/api/v3/configure/table \
+          -H 'Authorization: Bearer apiv3_dev-local-token' \
+          -H 'Content-Type: application/json' \
+          -d '{"db": "sensor-experiment", "table": "readings", "tags": ["sensor_id"], "fields": [{"name": "value", "type": "float64"}]}' && echo 'Table readings created.'
+
+secrets:
+  admin-token:
+    file: ./admin-token.json
