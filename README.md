@@ -1,12 +1,14 @@
 # Sensor experiment
 
-Rough plan with intention to 
-  - refresh & broaden my rust knowledge through exploration.
-  - prove my engineering experience can be applied to new technologies incl. my beginner/intermediate level rust.
+Rough plan with intention to
+
+- refresh & broaden my rust knowledge through exploration.
+- prove my engineering experience can be applied to new technologies incl. my beginner/intermediate level rust.
 
 ## Plan Sketch
 
 Rouch Client + Server model
+
 - Client-1 (esp-32, rust): gather sensor data and send it over the wire (usb/uart?) to be ingested by ingestion process.
 - Client-2: (web/nextjs/react). Display aggregated sensor data in a web view.
   - 1. button to rest query data in influxdb
@@ -20,6 +22,11 @@ Rouch Client + Server model
     - 1. Axum web server which serves an aggregated view of the data
     - 2. stretch: 'Perspective' view for dynamic queries
 
+## Guiding principles
+
+- Safe numeric conversions
+- defensive programming (assert assumptions)
 
 MVP / impl plan:
- 1. Rust server which persists to db.
+
+1.  Rust server which persists to db.
