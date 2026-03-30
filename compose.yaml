@@ -11,10 +11,12 @@ services:
       - --node-id=node0
       - --object-store=file
       - --data-dir=/var/lib/influxdb3/data
+      - --wal-flush-interval=100ms # using local disks
       # Note: NOT PRODUCTION READY!
-      - --admin-token-file=/run/secrets/admin-token
+      # - --admin-token-file=/run/secrets/admin-token
+      - --without-auth
     secrets:
-      - admin-token
+      - admin-token # Having trouble with auth so just disable for now (solveable & not my main focus)
     healthcheck:
       test:
         [
@@ -49,6 +51,24 @@ services:
           -H 'Content-Type: application/json' \
           -d '{"db": "sensor-experiment", "table": "readings", "tags": ["sensor_id"], "fields": [{"name": "value", "type": "float64"}]}' && echo 'Table readings created.'
 
+  grafana:
+    image: grafana/grafana
+    ports:
+      - 3000:3000
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_FEATURE_TOGGLES_ENABLE=newInfluxDSConfigPageDesign
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      influxdb3-core:
+        condition: service_healthy
+
 secrets:
   admin-token:
     file: ./admin-token.json
+
+volumes:
+  grafana-storage:

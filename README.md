@@ -39,6 +39,15 @@ MVP / impl plan:
 
 1.  Rust server which persists to db.
 
+## Lessons
+
+- InfluxDB WAL flush has a default of 1s causing each write to take 1s!
+  - 1. reduce as per docs for local disks (or mark writes not requiring wal write)
+  - 2. bigger batches & multiple concurrent writes in-flight
+- use '\_' instead of '-' in module names
+- `fn to_x` is the convention for **borrowed** self `&self`, `fn into_x` **consumes** self
+- need to 'pin' tokio stream in order to run/consume from it
+
 ## Setup
 
 ```sh
@@ -47,3 +56,7 @@ docker compose up -d
 # run the server
 cargo run --manifest-path crates/server/Cargo.toml
 ```
+
+### Agentic code Registry
+
+- init of influxdb for local dev. Reason: not main focus / plumbing
