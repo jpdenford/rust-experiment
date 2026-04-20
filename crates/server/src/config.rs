@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 pub struct Args {
   #[command(subcommand)]
   pub command: SamplingMode,
@@ -18,7 +18,7 @@ pub struct Args {
   pub db_token: String,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum SamplingMode {
   Simulated {
     #[doc = "The number of sensors to simulate"]

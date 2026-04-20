@@ -49,7 +49,12 @@ services:
         curl -sf -X POST http://influxdb3-core:8181/api/v3/configure/table \
           -H 'Authorization: Bearer apiv3_dev-local-token' \
           -H 'Content-Type: application/json' \
-          -d '{"db": "sensor-experiment", "table": "readings", "tags": ["sensor_id"], "fields": [{"name": "value", "type": "float64"}]}' && echo 'Table readings created.'
+          -d '{"db": "sensor-experiment", "table": "readings", "tags": ["sensor_id"], "fields": [{"name": "value", "type": "float64"}]}' && \ 
+           curl -sf -X POST http://influxdb3-core:8181/api/v3/configure/table \
+          -H 'Authorization: Bearer apiv3_dev-local-token' \
+          -H 'Content-Type: application/json' \
+          -d '{"db": "sensor-experiment", "table": "readings_invalid", "tags": ["sensor_id"], "fields": [{"name": "raw_value", "type": "string"},{"name": "error_code", "type": "string"},{"name": "message", "type": "string"},{"name": "is_ingestion_time", "type": "string"}]}'
+          && echo 'Table readings created.'
 
   grafana:
     image: grafana/grafana
