@@ -1,23 +1,28 @@
-use itertools::Itertools;
-use std::time::Duration;
-
+use crate::persistence::InfluxDbWriteableSafe;
+use crate::simulation::{KelvinSineGen, SensorSimulated};
 use crate::{
-  config::{Args, SamplingMode},
   model::{MsgProcessingError, PushSensor, SensorId},
   simulation::CannotConnect,
 };
 use backon::{ExponentialBuilder, Retryable};
 use futures::{StreamExt, future::try_join_all, stream::select_all};
 use influxdb::{Client, WriteQuery};
+use itertools::Itertools;
+use std::time::Duration;
 use tokio::pin;
 
-use crate::persistence::InfluxDbWriteableSafe;
-use crate::simulation::{KelvinSineGen, SensorSimulated};
+pub enum IngestionConfig {
+  Simulated { num_sensors: u16, sample_rate: u16 },
+  Live { addresses: Vec<String> },
+}
 
-pub async fn run_ingestion(config: Args) -> Result<(), CannotConnect> {
-  let sensors = match &config.command {
-    SamplingMode::Live { address: _ } => todo!("Live mode: Not implemented yet"),
-    SamplingMode::Simulated {
+pub async fn run_ingestion<Cfg: Into<IngestionConfig>>(
+  config: Cfg,
+  db_client: Client,
+) -> Result<(), CannotConnect> {
+  let sensors = match &config.into() {
+    IngestionConfig::Live { .. } => todo!("Live mode: Not implemented yet"),
+    IngestionConfig::Simulated {
       num_sensors,
       sample_rate,
     } => {
@@ -42,8 +47,6 @@ pub async fn run_ingestion(config: Args) -> Result<(), CannotConnect> {
     .map(Box::pin);
 
   let subs_combined = select_all(subs);
-
-  let db_client = Client::new(config.db_host, config.db_database).with_token(config.db_token);
 
   pin!(subs_combined);
 

@@ -1,9 +1,8 @@
 use crate::config::Args;
-use crate::ingestion::run_ingestion;
+use crate::ingestion::{IngestionConfig, run_ingestion};
+use crate::persistence::fetch_measurement_count;
 use clap::Parser;
-use influxdb::{Client, ReadQuery};
-use serde_json::Value;
-use std::num::ParseIntError;
+use influxdb::Client;
 use std::time::Duration;
 use tokio::select;
 use tokio::time::sleep;
@@ -18,25 +17,19 @@ mod simulation;
 async fn main() {
   let config = Args::parse();
 
-  let pipeline = run_ingestion(config.clone());
-  // Note that a stream may or may not be the best choice to simulate the
-  // Live configuration. If live, there is a separate process capturing samples, then
-  // we'd likely want to use some kind of buffered mechanism (e.g. channel?)
+  let ingestion_config: IngestionConfig = config.clone().into();
+  let db_client = Client::new(config.db_host, config.db_database).with_token(config.db_token);
+
+  let pipeline = run_ingestion(ingestion_config, db_client.clone());
 
   // Run the experiment for the duration specified
   let timer = sleep(Duration::from_secs(config.duration.into()));
   select! {
-    _pipe = pipeline => {
-      println!("Pipeline stopped?!")
-    },
-    _timer = timer => {
-      println!("Experiment end reached!")
-    }
+    _ = pipeline => println!("Pipeline stopped?!"),
+    _ = timer => println!("Experiment end reached!")
   }
 
-  let db_client = Client::new(config.db_host, config.db_database).with_token(config.db_token);
-
-  let res = get_table_count(db_client, "readings").await;
+  let res = fetch_measurement_count(db_client, "readings").await;
 
   match res {
     Ok(count) => println!("Row Count: {}", count),
@@ -44,25 +37,17 @@ async fn main() {
   }
 }
 
-#[derive(Debug)]
-enum CountError {
-  Db(influxdb::Error),
-  ResponseShape(serde_json::Error),
-  NumParse(ParseIntError),
-}
-
-async fn get_table_count(db_client: Client, table_name: &str) -> Result<u64, CountError> {
-  db_client
-    .query(ReadQuery::new(format!(
-      "SELECT count(*) from {}",
-      table_name
-    )))
-    .await
-    .map_err(CountError::Db)
-    .and_then(|r| {
-      let v: Value = serde_json::from_str(r.as_str()).map_err(CountError::ResponseShape)?;
-      let count = &v["results"][0]["series"][0]["values"][0][1];
-      Ok(count.to_string())
-    })
-    .and_then(|count_string| count_string.parse::<u64>().map_err(CountError::NumParse))
+impl Into<IngestionConfig> for Args {
+  fn into(self) -> IngestionConfig {
+    match self.command {
+      config::SamplingMode::Live { address } => IngestionConfig::Live { addresses: address },
+      config::SamplingMode::Simulated {
+        num_sensors,
+        sample_rate,
+      } => IngestionConfig::Simulated {
+        num_sensors,
+        sample_rate,
+      },
+    }
+  }
 }
