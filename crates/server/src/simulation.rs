@@ -53,12 +53,7 @@ impl Generator for PerlinKelvinGen {
   type Error = MsgProcessingError;
 
   fn generate(&self, t_micros: u128) -> Result<Self::Output, Self::Error> {
-    // TODO
-    Ok(TemperatureReading {
-      sensor_id: SensorId::new(1),
-      value: 1.0,
-      ts_micro: 3,
-    })
+    todo!()
   }
 }
 
@@ -101,13 +96,22 @@ impl Generator for KelvinSineGen {
   type Output = TemperatureReading;
   type Error = MsgProcessingError;
 
+  /// Roughly generates a sin wave (there will certainly be some loss of precision in the calc!)
   fn generate(&self, t_micros: u128) -> Result<Self::Output, Self::Error> {
     let two_pi = 2.0 * PI;
     let freq_micros = u64::from(self.frequency_ms) * 1000;
     // we know it fits b'cos freq_micros is a u64!
-    let ranged = (t_micros % u128::from(freq_micros)) as u64;
-    let normalised = ranged as f64 / freq_micros as f64; // not safe
-    let value = two_pi * (normalised + (f64::from(self.phase_offset_deg) / 365.0));
+    let t_mod_freq = (t_micros % u128::from(freq_micros)) as u64;
+    // frequency as 0 - 1
+    let freq_normalised = t_mod_freq as f64 / freq_micros as f64; // not safe
+    let phased = two_pi * (freq_normalised + (f64::from(self.phase_offset_deg) / 365.0));
+
+    let sin = phased.sin();
+    let sin_normalised = (sin + 1.0) / 2.0;
+
+    // now shift the sin to our specified domain / range
+    let temp_range = self.max_temp - self.min_temp;
+    let value = (sin_normalised * temp_range) + self.min_temp;
 
     Ok(TemperatureReading {
       sensor_id: self.sensor_id.clone(),
