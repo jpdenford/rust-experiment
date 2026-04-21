@@ -13,7 +13,7 @@ use tokio::pin;
 
 pub enum IngestionConfig {
   Simulated { num_sensors: u16, sample_rate: u16 },
-  Live { addresses: Vec<String> },
+  Live { addresses: Vec<String> }, // placeholder up at this point
 }
 
 pub async fn run_ingestion<Cfg: Into<IngestionConfig>>(
@@ -26,8 +26,7 @@ pub async fn run_ingestion<Cfg: Into<IngestionConfig>>(
       num_sensors,
       sample_rate,
     } => {
-      // println!("Sampling mode: Simulated");
-      // // TODO use cancellation token to gracefully shutdown
+      // TODO use cancellation token to gracefully shutdown
       // dummy_temperature_readings(*sample_rate, (0..*num_sensors).collect())
       (0..*num_sensors).map(|i| {
         SensorSimulated::<KelvinSineGen>::new(
@@ -40,7 +39,6 @@ pub async fn run_ingestion<Cfg: Into<IngestionConfig>>(
     }
   };
 
-  // TODO stream / select_all
   let subs = try_join_all(sensors.map(|s| s.connect_and_sub()))
     .await?
     .into_iter()
@@ -52,7 +50,7 @@ pub async fn run_ingestion<Cfg: Into<IngestionConfig>>(
 
   // There is a fundamental issue with this pipline that it doesn't try to
   // scale up to meet the source 'sample rate'. If the sample velocity is known ahead
-  // of time then that's fine but if not then we could lag severely behind.
+  // of time then that's fine (can be configured appropriately) but if not then we could lag severely behind.
   // This is only a problem if the sample rate isn't known ahead of time / can change dynamically though.
   subs_combined
     .ready_chunks(2_000)
