@@ -1,6 +1,6 @@
 use crate::{
   exp_utils::now_millis,
-  model::{MalformedSensorPayload, PushSensor, SensorId, State, TemperatureReading},
+  model::{MsgProcessingError, PushSensor, SensorId, State, TemperatureReading},
 };
 use async_stream::stream;
 use futures::Stream;
@@ -10,6 +10,7 @@ use std::{
   sync::Arc,
   time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use thiserror::Error;
 use tokio::time::{self, interval, sleep};
 
 /// Something that generates sensor readings and failures
@@ -28,6 +29,39 @@ pub struct SensorSimulated<G: Generator> {
   generator: Arc<G>,
 }
 
+impl SensorSimulated<KelvinSineGen> {
+  pub fn new(name: &str, id: u16, sample_interval: Duration, generator: KelvinSineGen) -> Self {
+    SensorSimulated {
+      id,
+      name: name.to_string(),
+      state: State::Disconnected,
+      sample_interval,
+      generator: Arc::new(generator),
+    }
+  }
+}
+
+#[derive(Error, Debug, Clone)]
+#[error("Cannot connect: {reason}")]
+pub struct CannotConnect {
+  reason: String,
+}
+
+struct PerlinKelvinGen;
+impl Generator for PerlinKelvinGen {
+  type Output = TemperatureReading;
+  type Error = MsgProcessingError;
+
+  fn generate(&self, t_micros: u128) -> Result<Self::Output, Self::Error> {
+    // TODO
+    Ok(TemperatureReading {
+      sensor_id: SensorId::new(1),
+      value: 1.0,
+      ts_micro: 3,
+    })
+  }
+}
+
 impl SensorSimulated<PerlinKelvinGen> {
   fn new(name: &str, id: u16, sample_interval: Duration, generator: PerlinKelvinGen) -> Self {
     SensorSimulated {
@@ -40,41 +74,7 @@ impl SensorSimulated<PerlinKelvinGen> {
   }
 }
 
-impl SensorSimulated<SineKelvinGen> {
-  pub fn new(name: &str, id: u16, sample_interval: Duration, generator: SineKelvinGen) -> Self {
-    SensorSimulated {
-      id,
-      name: name.to_string(),
-      state: State::Disconnected,
-      sample_interval,
-      generator: Arc::new(generator),
-    }
-  }
-}
-
-#[derive(Debug)]
-pub struct CannotConnect {
-  reason: String,
-}
-
-struct PerlinKelvinGen;
-impl Generator for PerlinKelvinGen {
-  type Output = TemperatureReading;
-  type Error = MalformedSensorPayload;
-
-  fn generate(&self, t_micros: u128) -> Result<Self::Output, Self::Error> {
-    // TODO
-    Ok(TemperatureReading {
-      sensor_id: SensorId::new(1),
-      value: 1.0,
-      ts_micro: 3,
-    })
-  }
-}
-
-// struct Microseconds(u128);
-
-pub struct SineKelvinGen {
+pub struct KelvinSineGen {
   pub sensor_id: SensorId,
 
   pub min_temp: f64,
@@ -85,9 +85,9 @@ pub struct SineKelvinGen {
   pub frequency_ms: u32,
 }
 
-impl SineKelvinGen {
+impl KelvinSineGen {
   pub fn new(sensor_id: SensorId) -> Self {
-    SineKelvinGen {
+    KelvinSineGen {
       sensor_id,
       min_temp: 0.0,
       max_temp: 100_000_000.0,
@@ -97,9 +97,9 @@ impl SineKelvinGen {
   }
 }
 
-impl Generator for SineKelvinGen {
+impl Generator for KelvinSineGen {
   type Output = TemperatureReading;
-  type Error = MalformedSensorPayload;
+  type Error = MsgProcessingError;
 
   fn generate(&self, t_micros: u128) -> Result<Self::Output, Self::Error> {
     let two_pi = 2.0 * PI;
@@ -121,10 +121,10 @@ impl Generator for SineKelvinGen {
 // https://www.youtube.com/watch?v=qrf52BVaZM8
 // e.g. impl<I: Iterator> IteratorExt for I {}
 
-impl PushSensor for SensorSimulated<SineKelvinGen> {
+impl PushSensor for SensorSimulated<KelvinSineGen> {
   type ConErr = CannotConnect;
   type Measure = TemperatureReading;
-  type ValueErr = MalformedSensorPayload;
+  type ValueErr = MsgProcessingError;
 
   fn name(&self) -> &str {
     &self.name

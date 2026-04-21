@@ -1468,6 +1468,7 @@ dependencies = [
  "itertools",
  "noise",
  "serde_json",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
  "tokio-util",

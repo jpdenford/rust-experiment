@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use crate::{
   config::{Args, SamplingMode},
-  model::{MalformedSensorPayload, PushSensor, SensorId},
+  model::{MsgProcessingError, PushSensor, SensorId},
   simulation::CannotConnect,
 };
 use backon::{ExponentialBuilder, Retryable};
@@ -12,7 +12,7 @@ use influxdb::{Client, WriteQuery};
 use tokio::pin;
 
 use crate::persistence::InfluxDbWriteableSafe;
-use crate::simulation::{SensorSimulated, SineKelvinGen};
+use crate::simulation::{KelvinSineGen, SensorSimulated};
 
 pub async fn run_ingestion(config: Args) -> Result<(), CannotConnect> {
   let sensors = match &config.command {
@@ -25,11 +25,11 @@ pub async fn run_ingestion(config: Args) -> Result<(), CannotConnect> {
       // // TODO use cancellation token to gracefully shutdown
       // dummy_temperature_readings(*sample_rate, (0..*num_sensors).collect())
       (0..*num_sensors).map(|i| {
-        SensorSimulated::<SineKelvinGen>::new(
+        SensorSimulated::<KelvinSineGen>::new(
           format!("temp_{}", i).as_str(),
           i,
           Duration::from_millis(1),
-          SineKelvinGen::new(SensorId::new(i)),
+          KelvinSineGen::new(SensorId::new(i)),
         )
       })
     }
@@ -95,7 +95,7 @@ pub async fn run_ingestion(config: Args) -> Result<(), CannotConnect> {
   Ok(())
 }
 
-async fn handle_failed_inserts(_readings: Vec<MalformedSensorPayload>) -> () {
+async fn _handle_failed_inserts(_readings: Vec<MsgProcessingError>) -> () {
   // Write failures to dead-letter file on disk? (append only)
   todo!();
 }

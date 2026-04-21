@@ -1,9 +1,11 @@
 use futures::Stream;
+use thiserror::Error;
 
 // pub type SensorId = u16;
 
 #[derive(Debug, Clone)]
 pub struct SensorId(u16);
+
 impl SensorId {
   pub fn new(id: u16) -> Self {
     SensorId(id)
@@ -30,20 +32,23 @@ impl ExpMeasurement for TemperatureReading {
   }
 }
 
-#[derive(Debug, Clone)]
-pub struct MalformedSensorPayload {
-  pub sensor_id: Option<SensorId>,
-  /// Hex encoded raw values received over the wire
-  pub raw_value: Option<String>,
-  /// Canonical error code representing the type
-  pub error_code: String, // Alternatively can make this struct into an enum and use a 'getter fn' at storage layer
-  /// Detail about why the message couldn't be properly read
-  pub message: String,
-  /// Either the sensor or ingestion time
-  pub ts_micro: u128,
-  /// if the payload is malformed we may need to use the
-  /// ingestion time rather than the 'sensor time' on the payload
-  pub is_ingestion_time: bool,
+#[derive(Error, Debug, Clone)]
+pub enum MsgProcessingError {
+  #[error("Malformed payload, unparseable: {:?}", sensor_id)]
+  MalformedSensorPayload {
+    sensor_id: Option<SensorId>,
+    /// Hex encoded raw values received over the wire
+    raw_value: Option<String>,
+    /// Canonical error code representing the type
+    error_code: String, // Alternatively can make this struct into an enum and use a 'getter fn' at storage layer
+    /// Detail about why the message couldn't be properly read
+    message: String,
+    /// Either the sensor or ingestion time
+    ts_micro: u128,
+    /// if the payload is malformed we may need to use the
+    /// ingestion time rather than the 'sensor time' on the payload
+    is_ingestion_time: bool,
+  },
 }
 
 #[derive(Debug, Clone)]
