@@ -18,6 +18,8 @@ open localhost:3000 # un/pw both 'admin'
 
 InfluxDB dev token: `apiv3_dev-local-token`
 
+![screenshot](static/screenshot.png)
+
 ## Architecture
 
 Services:
