@@ -12,8 +12,13 @@ use std::time::Duration;
 use tokio::pin;
 
 pub enum IngestionConfig {
-  Simulated { num_sensors: u16, sample_rate: u16 },
-  Live { addresses: Vec<String> }, // placeholder up at this point
+  Simulated {
+    num_sensors: u16,
+    sample_rate_ms: u16,
+  },
+  Live {
+    addresses: Vec<String>,
+  }, // placeholder up at this point
 }
 
 pub async fn run_ingestion<Cfg: Into<IngestionConfig>>(
@@ -24,15 +29,16 @@ pub async fn run_ingestion<Cfg: Into<IngestionConfig>>(
     IngestionConfig::Live { .. } => todo!("Live mode: Not implemented yet"),
     IngestionConfig::Simulated {
       num_sensors,
-      sample_rate,
+      sample_rate_ms,
     } => {
+      let sample_rate_ms = sample_rate_ms.clone();
       // TODO use cancellation token to gracefully shutdown
       // dummy_temperature_readings(*sample_rate, (0..*num_sensors).collect())
-      (0..*num_sensors).map(|i| {
+      (0..*num_sensors).map(move |i| {
         SensorSimulated::<KelvinSineGen>::new(
           format!("temp_{}", i).as_str(),
           i,
-          Duration::from_millis(1),
+          Duration::from_millis(sample_rate_ms.into()),
           KelvinSineGen::new(SensorId::new(i)),
         )
       })

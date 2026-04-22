@@ -25,9 +25,9 @@ pub enum SamplingMode {
     #[arg(long, short = 'n', default_value_t = 1u16)]
     num_sensors: u16,
 
-    #[doc = "The number of samples per sensor per second"]
+    #[doc = "Number of milliseconds between samples"]
     #[arg(long, short = 's', default_value_t = 10u16)]
-    sample_rate: u16,
+    sample_rate_ms: u16,
   },
   Live {
     #[doc = "The addresses of any real sensors"] // TBD how to actually do this w. esp32 etc

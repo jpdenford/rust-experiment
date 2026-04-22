@@ -31,6 +31,10 @@ The current implementation:
 - Simulates sensor readings
 - Transforms them and writes them into influxdb via the influxdb client (crate)
 
+**Missing**
+
+- Metrics / Logging (via opentelemetry)
+
 ## Plan
 
 Rough Client + Server model

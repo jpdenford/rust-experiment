@@ -1,24 +1,20 @@
-use crate::{
-  exp_utils::now_millis,
-  model::{MsgProcessingError, PushSensor, SensorId, State, TemperatureReading},
-};
+use crate::model::{MsgProcessingError, PushSensor, SensorId, State, TemperatureReading};
 use async_stream::stream;
 use futures::Stream;
-use noise::{NoiseFn, Perlin};
 use std::{
   f64::consts::PI,
   sync::Arc,
-  time::{Duration, SystemTime, UNIX_EPOCH},
+  time::{Duration, UNIX_EPOCH},
 };
-use thiserror::Error;
-use tokio::time::{self, interval, sleep};
+use thiserror;
+use tokio::time::{interval, sleep};
 
 /// Something that generates sensor readings and failures
 pub trait Generator {
-  type Output;
-  type Error;
+  type Measurement;
+  type FailedMeasurement;
 
-  fn generate(&self, t_micros: u128) -> Result<Self::Output, Self::Error>;
+  fn generate(&self, t_micros: u128) -> Result<Self::Measurement, Self::FailedMeasurement>;
 }
 
 pub struct SensorSimulated<G: Generator> {
@@ -41,41 +37,13 @@ impl SensorSimulated<KelvinSineGen> {
   }
 }
 
-#[derive(Error, Debug, Clone)]
-#[error("Cannot connect: {reason}")]
-pub struct CannotConnect {
-  reason: String,
-}
-
-struct PerlinKelvinGen;
-impl Generator for PerlinKelvinGen {
-  type Output = TemperatureReading;
-  type Error = MsgProcessingError;
-
-  fn generate(&self, t_micros: u128) -> Result<Self::Output, Self::Error> {
-    todo!()
-  }
-}
-
-impl SensorSimulated<PerlinKelvinGen> {
-  fn new(name: &str, id: u16, sample_interval: Duration, generator: PerlinKelvinGen) -> Self {
-    SensorSimulated {
-      id,
-      name: name.to_string(),
-      state: State::Disconnected,
-      sample_interval,
-      generator: Arc::new(generator),
-    }
-  }
-}
-
 pub struct KelvinSineGen {
   pub sensor_id: SensorId,
 
   pub min_temp: f64,
   pub max_temp: f64,
   /// Initial phase offset in degrees (course)
-  pub phase_offset_deg: u8,
+  pub phase_offset_rad: f64,
   /// Time to complete a full cycle (in millis)
   pub frequency_ms: u32,
 }
@@ -84,34 +52,43 @@ impl KelvinSineGen {
   pub fn new(sensor_id: SensorId) -> Self {
     KelvinSineGen {
       sensor_id,
+      ..Self::defaults()
+    }
+  }
+
+  /// Returns a zeroed/default instance. Use with struct update syntax to override specific fields:
+  /// `KelvinSineGen { sensor_id, max_temp: 500.0, ..KelvinSineGen::defaults() }`
+  pub fn defaults() -> Self {
+    KelvinSineGen {
+      sensor_id: SensorId::new(0),
       min_temp: 0.0,
       max_temp: 100_000_000.0,
-      phase_offset_deg: 0,
+      phase_offset_rad: 0.0,
       frequency_ms: 20_000,
     }
   }
 }
 
 impl Generator for KelvinSineGen {
-  type Output = TemperatureReading;
-  type Error = MsgProcessingError;
+  type Measurement = TemperatureReading;
+  type FailedMeasurement = MsgProcessingError;
 
   /// Roughly generates a sin wave (there will certainly be some loss of precision in the calc!)
-  fn generate(&self, t_micros: u128) -> Result<Self::Output, Self::Error> {
+  fn generate(&self, t_micros: u128) -> Result<Self::Measurement, Self::FailedMeasurement> {
     let two_pi = 2.0 * PI;
     let freq_micros = u64::from(self.frequency_ms) * 1000;
     // we know it fits b'cos freq_micros is a u64!
     let t_mod_freq = (t_micros % u128::from(freq_micros)) as u64;
     // frequency as 0 - 1
     let freq_normalised = t_mod_freq as f64 / freq_micros as f64; // not safe
-    let phased = two_pi * (freq_normalised + (f64::from(self.phase_offset_deg) / 365.0));
+    let phased = two_pi * (freq_normalised + (f64::from(self.phase_offset_rad) / 365.0));
 
     let sin = phased.sin();
-    let sin_normalised = (sin + 1.0) / 2.0;
+    let amplitude_normalised = (sin + 1.0) / 2.0;
 
     // now shift the sin to our specified domain / range
     let temp_range = self.max_temp - self.min_temp;
-    let value = (sin_normalised * temp_range) + self.min_temp;
+    let value = (amplitude_normalised * temp_range) + self.min_temp;
 
     Ok(TemperatureReading {
       sensor_id: self.sensor_id.clone(),
@@ -119,6 +96,12 @@ impl Generator for KelvinSineGen {
       value,
     })
   }
+}
+
+#[derive(thiserror::Error, Debug, Clone)]
+#[error("Cannot connect: {reason}")]
+pub struct CannotConnect {
+  reason: String,
 }
 
 // TODO try using a 'blanket implementation'
@@ -168,49 +151,35 @@ impl PushSensor for SensorSimulated<KelvinSineGen> {
   }
 }
 
-// Ideally here I'd just use FastCheck or something!
-fn _dummy_temperature_readings(
-  samples_per_second: u16,
-  sensor_ids: Vec<SensorId>,
-) -> impl Stream<Item = TemperatureReading> {
-  let now = now_millis();
+#[cfg(test)]
+mod tests {
 
-  let noise = Perlin::new((now % u128::from(u32::MAX)) as u32); // wraparound doesn't matter, just need a seed
+  use super::*;
 
-  // NOTE: this is not very accurate since emitting the measurement will take time
-  let micros_between = 1_000_000 / (samples_per_second as u64);
+  // TODO use fastcheck to explore the generated space more thoroughly
+  #[test]
+  fn kelvin_sine_gen_within_range() {
+    let generator = KelvinSineGen {
+      sensor_id: SensorId::new(0),
+      min_temp: 0.0,
+      max_temp: 1_000_000.0,
+      phase_offset_rad: 0.0,
+      frequency_ms: 20_000,
+    };
 
-  const MAX_TEMP: f64 = 50_000_000f64;
-
-  stream! {
-
-   let mut interval = time::interval(Duration::from_micros(micros_between));
-   println!("Sample interval {:?}", interval.period());
-
-   let mut i = 0usize;
-
-   // TODO add signal/async select for ending the sampling / cleanup?
-    loop {
-      for sensor_id in &sensor_ids {
-        // NOTE: unsafe conversions but not fussed for dummy data
-        let point = [(i + ((*sensor_id).get() as usize * 200) % 5_000) as f64 / 5_000f64];
-        let reading = (noise.get(point) + 1.0) * 0.5 * MAX_TEMP;
-
-        // Okay to unwrap since UNIX_EPOCH will always be earlier than now
-        let time_now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros();
-
-        let dummy_reading = TemperatureReading {
-          sensor_id: (*sensor_id).clone(),
-          value: reading,
-          ts_micro: time_now
-        };
-
-        yield dummy_reading;
-      }
-
-      interval.tick().await;
-
-      i = i.wrapping_add(1); // Illustrative only, practically will never wrap
+    for t in (0..100_000).step_by(100) {
+      let reading = generator.generate(t).unwrap();
+      assert!(
+        reading.value >= generator.min_temp && reading.value <= generator.max_temp,
+        "Value out of range: {}",
+        reading.value
+      );
     }
+  }
+
+  #[test]
+  #[ignore]
+  fn kelvin_sine_phase_offset_accurate() {
+    todo!();
   }
 }

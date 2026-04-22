@@ -43,10 +43,10 @@ impl Into<IngestionConfig> for Args {
       config::SamplingMode::Live { address } => IngestionConfig::Live { addresses: address },
       config::SamplingMode::Simulated {
         num_sensors,
-        sample_rate,
+        sample_rate_ms,
       } => IngestionConfig::Simulated {
         num_sensors,
-        sample_rate,
+        sample_rate_ms,
       },
     }
   }
