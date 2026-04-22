@@ -1,6 +1,7 @@
-use crate::model::{MsgProcessingError, PushSensor, SensorId, State, TemperatureReading};
+use crate::model::{MsgProcessingError, PushSensor, SensorId, SensorState, TemperatureReading};
 use async_stream::stream;
 use futures::Stream;
+use std::fmt;
 use std::{
   f64::consts::PI,
   sync::Arc,
@@ -9,18 +10,19 @@ use std::{
 use thiserror;
 use tokio::time::{interval, sleep};
 
-/// Something that generates sensor readings and failures
+/// Something that generates raw sample values (no identity or timestamp)
 pub trait Generator {
-  type Measurement;
-  type FailedMeasurement;
+  type Value;
+  type Error: fmt::Debug;
 
-  fn generate(&self, t_micros: u128) -> Result<Self::Measurement, Self::FailedMeasurement>;
+  fn generate(&self, t_micros: u128) -> Result<Self::Value, Self::Error>;
 }
 
 pub struct SensorSimulated<G: Generator> {
-  id: u16,
+  id: SensorId,
+  // Human readable name for debugging (not persisted)
   name: String,
-  state: State,
+  state: SensorState,
   sample_interval: Duration,
   generator: Arc<G>,
 }
@@ -28,9 +30,9 @@ pub struct SensorSimulated<G: Generator> {
 impl SensorSimulated<KelvinSineGen> {
   pub fn new(name: &str, id: u16, sample_interval: Duration, generator: KelvinSineGen) -> Self {
     SensorSimulated {
-      id,
+      id: SensorId::new(id),
       name: name.to_string(),
-      state: State::Disconnected,
+      state: SensorState::Disconnected,
       sample_interval,
       generator: Arc::new(generator),
     }
@@ -38,8 +40,6 @@ impl SensorSimulated<KelvinSineGen> {
 }
 
 pub struct KelvinSineGen {
-  pub sensor_id: SensorId,
-
   pub min_temp: f64,
   pub max_temp: f64,
   /// Initial phase offset in degrees (course)
@@ -49,18 +49,14 @@ pub struct KelvinSineGen {
 }
 
 impl KelvinSineGen {
-  pub fn new(sensor_id: SensorId) -> Self {
-    KelvinSineGen {
-      sensor_id,
-      ..Self::defaults()
-    }
+  pub fn new() -> Self {
+    Self::defaults()
   }
 
   /// Returns a zeroed/default instance. Use with struct update syntax to override specific fields:
-  /// `KelvinSineGen { sensor_id, max_temp: 500.0, ..KelvinSineGen::defaults() }`
+  /// `KelvinSineGen { max_temp: 500.0, ..KelvinSineGen::defaults() }`
   pub fn defaults() -> Self {
     KelvinSineGen {
-      sensor_id: SensorId::new(0),
       min_temp: 0.0,
       max_temp: 100_000_000.0,
       phase_offset_rad: 0.0,
@@ -70,11 +66,11 @@ impl KelvinSineGen {
 }
 
 impl Generator for KelvinSineGen {
-  type Measurement = TemperatureReading;
-  type FailedMeasurement = MsgProcessingError;
+  type Value = f64;
+  type Error = std::convert::Infallible;
 
   /// Roughly generates a sin wave (there will certainly be some loss of precision in the calc!)
-  fn generate(&self, t_micros: u128) -> Result<Self::Measurement, Self::FailedMeasurement> {
+  fn generate(&self, t_micros: u128) -> Result<Self::Value, Self::Error> {
     let two_pi = 2.0 * PI;
     let freq_micros = u64::from(self.frequency_ms) * 1000;
     // we know it fits b'cos freq_micros is a u64!
@@ -90,11 +86,7 @@ impl Generator for KelvinSineGen {
     let temp_range = self.max_temp - self.min_temp;
     let value = (amplitude_normalised * temp_range) + self.min_temp;
 
-    Ok(TemperatureReading {
-      sensor_id: self.sensor_id.clone(),
-      ts_micro: t_micros,
-      value,
-    })
+    Ok(value)
   }
 }
 
@@ -118,27 +110,39 @@ impl PushSensor for SensorSimulated<KelvinSineGen> {
   }
 
   fn id(&self) -> u16 {
-    self.id
+    self.id.get()
   }
 
   // Note that this isn't the most efficient since we spawn a task for
-  // each sensor. In theory we could combine them intongle thread.
+  // each sensor. In theory we could combine them into a single thread
   async fn connect_and_sub(
     mut self,
   ) -> Result<impl Stream<Item = Result<Self::Measure, Self::ValueErr>>, Self::ConErr> {
-    self.state = State::Connecting;
+    self.state = SensorState::Connecting;
     // simulate updating the state
     sleep(Duration::from_millis(10)).await;
-    self.state = State::Connected;
+    self.state = SensorState::Connected;
 
     let mut interval = interval(self.sample_interval);
     let generator = self.generator.clone();
+    let sensor_id = self.id;
 
     let result_stream = stream! {
       loop {
         interval.tick().await;
-        let t = UNIX_EPOCH.elapsed().unwrap().as_micros();
-        let sample = generator.generate(t);
+        let micros_epoch = UNIX_EPOCH.elapsed().unwrap().as_micros();
+        let sample = generator.generate(micros_epoch).map(|value| TemperatureReading {
+          sensor_id: sensor_id.clone(),
+          ts_micro: micros_epoch,
+          value,
+        }).map_err(|e| MsgProcessingError::MalformedSensorPayload { // currently no errors are generated
+          sensor_id: Some(sensor_id.clone()),
+          raw_value: None,
+          error_code: "GENERATOR_ERROR".to_string(),
+          message: format!("{:?}", e),
+          ts_micro: micros_epoch,
+          is_ingestion_time: true,
+        });
         yield sample;
       }
     };
@@ -146,7 +150,7 @@ impl PushSensor for SensorSimulated<KelvinSineGen> {
     Ok(result_stream)
   }
 
-  fn get_state(&self) -> State {
+  fn get_state(&self) -> SensorState {
     self.state.clone()
   }
 }
@@ -160,7 +164,6 @@ mod tests {
   #[test]
   fn kelvin_sine_gen_within_range() {
     let generator = KelvinSineGen {
-      sensor_id: SensorId::new(0),
       min_temp: 0.0,
       max_temp: 1_000_000.0,
       phase_offset_rad: 0.0,
@@ -168,11 +171,11 @@ mod tests {
     };
 
     for t in (0..100_000).step_by(100) {
-      let reading = generator.generate(t).unwrap();
+      let value = generator.generate(t).unwrap();
       assert!(
-        reading.value >= generator.min_temp && reading.value <= generator.max_temp,
+        value >= generator.min_temp && value <= generator.max_temp,
         "Value out of range: {}",
-        reading.value
+        value
       );
     }
   }

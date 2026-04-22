@@ -7,7 +7,6 @@ use std::time::Duration;
 use tokio::select;
 use tokio::time::sleep;
 mod config;
-mod exp_utils;
 mod ingestion;
 mod model;
 mod persistence;
@@ -22,10 +21,10 @@ async fn main() {
 
   let pipeline = run_ingestion(ingestion_config, db_client.clone());
 
-  // Run the experiment for the duration specified
+  // Run the experiment for the duration specified. Note: could use cancellation token here
   let timer = sleep(Duration::from_secs(config.duration.into()));
   select! {
-    _ = pipeline => println!("Pipeline stopped?!"),
+    _ = pipeline => println!("Pipeline stopped!"),
     _ = timer => println!("Experiment end reached!")
   }
 

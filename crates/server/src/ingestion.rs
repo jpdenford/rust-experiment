@@ -1,11 +1,11 @@
 use crate::persistence::InfluxDbWriteableSafe;
 use crate::simulation::{KelvinSineGen, SensorSimulated};
 use crate::{
-  model::{MsgProcessingError, PushSensor, SensorId},
+  model::{MsgProcessingError, PushSensor},
   simulation::CannotConnect,
 };
-use backon::{ExponentialBuilder, Retryable};
-use futures::{StreamExt, future::try_join_all, stream::select_all};
+use backon::Retryable;
+use futures::{StreamExt, future, stream};
 use influxdb::{Client, WriteQuery};
 use itertools::Itertools;
 use std::time::Duration;
@@ -36,21 +36,21 @@ pub async fn run_ingestion<Cfg: Into<IngestionConfig>>(
       // dummy_temperature_readings(*sample_rate, (0..*num_sensors).collect())
       (0..*num_sensors).map(move |i| {
         SensorSimulated::<KelvinSineGen>::new(
-          format!("temp_{}", i).as_str(),
+          format!("T_{}", i).as_str(),
           i,
           Duration::from_millis(sample_rate_ms.into()),
-          KelvinSineGen::new(SensorId::new(i)),
+          KelvinSineGen::new(),
         )
       })
     }
   };
 
-  let subs = try_join_all(sensors.map(|s| s.connect_and_sub()))
+  let subs = future::try_join_all(sensors.map(|s| s.connect_and_sub()))
     .await?
     .into_iter()
     .map(Box::pin);
 
-  let subs_combined = select_all(subs);
+  let subs_combined = stream::select_all(subs);
 
   pin!(subs_combined);
 
@@ -77,7 +77,7 @@ pub async fn run_ingestion<Cfg: Into<IngestionConfig>>(
       async move {
         (
           (|| client.query(all_readings.clone()))
-            .retry(ExponentialBuilder::default())
+            .retry(backon::ExponentialBuilder::default())
             .when(|e| match *e {
               influxdb::Error::ApiError(_) => true, // TODO add more here - illustrative only
               _ => false,
@@ -95,7 +95,7 @@ pub async fn run_ingestion<Cfg: Into<IngestionConfig>>(
     })
     .buffer_unordered(4) // four batches in flight at any given time
     .for_each(async |res| match res {
-      (Err(e), _batch) => todo!("log & send to dlq?"),
+      (Err(e), _batch) => todo!("log & send to dlq file?"),
       (Ok(_), batch) => println!("Batch completed. len: {}", batch.len()),
     })
     .await;

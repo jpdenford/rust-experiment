@@ -1,7 +1,5 @@
-use futures::Stream;
+use futures;
 use thiserror::Error;
-
-// pub type SensorId = u16;
 
 #[derive(Debug, Clone)]
 pub struct SensorId(u16);
@@ -59,7 +57,7 @@ pub struct TemperatureReading {
 }
 
 #[derive(Clone)]
-pub enum State {
+pub enum SensorState {
   Disconnected,
   Connecting,
   Connected,
@@ -77,7 +75,7 @@ pub trait PushSensor {
 
   async fn connect_and_sub(
     self,
-  ) -> Result<impl Stream<Item = Result<Self::Measure, Self::ValueErr>>, Self::ConErr>;
+  ) -> Result<impl futures::Stream<Item = Result<Self::Measure, Self::ValueErr>>, Self::ConErr>;
 
-  fn get_state(&self) -> State;
+  fn get_state(&self) -> SensorState;
 }
