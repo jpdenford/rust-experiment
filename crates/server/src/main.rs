@@ -7,8 +7,8 @@ use std::time::Duration;
 use tokio::select;
 use tokio::time::sleep;
 mod config;
+mod core;
 mod ingestion;
-mod model;
 mod persistence;
 mod simulation;
 
@@ -39,7 +39,7 @@ async fn main() {
 impl Into<IngestionConfig> for Args {
   fn into(self) -> IngestionConfig {
     match self.command {
-      config::SamplingMode::Live { address } => IngestionConfig::Live { addresses: address },
+      config::SamplingMode::Live { .. } => todo!("Not yet implemented"),
       config::SamplingMode::Simulated {
         num_sensors,
         sample_rate_ms,

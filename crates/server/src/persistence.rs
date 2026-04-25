@@ -1,5 +1,5 @@
-use crate::model::MsgProcessingError;
-use crate::model::TemperatureReading;
+use crate::core::MsgProcessingError;
+use crate::core::TemperatureReading;
 use influxdb::Client;
 use influxdb::ReadQuery;
 use influxdb::WriteQuery;

@@ -1,7 +1,7 @@
 use crate::persistence::InfluxDbWriteableSafe;
 use crate::simulation::{KelvinSineGen, SensorSimulated};
 use crate::{
-  model::{MsgProcessingError, PushSensor},
+  core::{MsgProcessingError, PushSensor, TemperatureReading},
   simulation::CannotConnect,
 };
 use backon::Retryable;
@@ -16,9 +16,6 @@ pub enum IngestionConfig {
     num_sensors: u16,
     sample_rate_ms: u16,
   },
-  Live {
-    addresses: Vec<String>,
-  }, // placeholder up at this point
 }
 
 pub async fn run_ingestion<Cfg: Into<IngestionConfig>>(
@@ -26,7 +23,6 @@ pub async fn run_ingestion<Cfg: Into<IngestionConfig>>(
   db_client: Client,
 ) -> Result<(), CannotConnect> {
   let sensors = match &config.into() {
-    IngestionConfig::Live { .. } => todo!("Live mode: Not implemented yet"),
     IngestionConfig::Simulated {
       num_sensors,
       sample_rate_ms,
@@ -95,14 +91,16 @@ pub async fn run_ingestion<Cfg: Into<IngestionConfig>>(
     })
     .buffer_unordered(4) // four batches in flight at any given time
     .for_each(async |res| match res {
-      (Err(e), _batch) => todo!("log & send to dlq file?"),
+      (Err(e), batch) => handle_failed_inserts(batch).await,
       (Ok(_), batch) => println!("Batch completed. len: {}", batch.len()),
     })
     .await;
   Ok(())
 }
 
-async fn _handle_failed_inserts(_readings: Vec<MsgProcessingError>) -> () {
-  // Write failures to dead-letter file on disk? (append only)
+async fn handle_failed_inserts(
+  _readings: Vec<Result<TemperatureReading, MsgProcessingError>>,
+) -> () {
+  // Append failures to 'dead-letter' file on disk? (append only)
   todo!();
 }

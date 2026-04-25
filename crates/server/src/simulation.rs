@@ -1,4 +1,4 @@
-use crate::model::{MsgProcessingError, PushSensor, SensorId, SensorState, TemperatureReading};
+use crate::core::{MsgProcessingError, PushSensor, SensorId, SensorState, TemperatureReading};
 use async_stream::stream;
 use futures::Stream;
 use std::fmt;
@@ -39,13 +39,14 @@ impl SensorSimulated<KelvinSineGen> {
   }
 }
 
+#[derive(Debug, Clone)]
 pub struct KelvinSineGen {
   pub min_temp: f64,
   pub max_temp: f64,
   /// Initial phase offset in degrees (course)
   pub phase_offset_rad: f64,
   /// Time to complete a full cycle (in millis)
-  pub frequency_ms: u32,
+  pub period_ms: u32,
 }
 
 impl KelvinSineGen {
@@ -60,7 +61,7 @@ impl KelvinSineGen {
       min_temp: 0.0,
       max_temp: 100_000_000.0,
       phase_offset_rad: 0.0,
-      frequency_ms: 20_000,
+      period_ms: 20_000,
     }
   }
 }
@@ -72,7 +73,7 @@ impl Generator for KelvinSineGen {
   /// Roughly generates a sin wave (there will certainly be some loss of precision in the calc!)
   fn generate(&self, t_micros: u128) -> Result<Self::Value, Self::Error> {
     let two_pi = 2.0 * PI;
-    let freq_micros = u64::from(self.frequency_ms) * 1000;
+    let freq_micros = u64::from(self.period_ms) * 1000;
     // we know it fits b'cos freq_micros is a u64!
     let t_mod_freq = (t_micros % u128::from(freq_micros)) as u64;
     // frequency as 0 - 1
@@ -84,9 +85,9 @@ impl Generator for KelvinSineGen {
 
     // now shift the sin to our specified domain / range
     let temp_range = self.max_temp - self.min_temp;
-    let value = (amplitude_normalised * temp_range) + self.min_temp;
+    let value_vert_shifted = (amplitude_normalised * temp_range) + self.min_temp;
 
-    Ok(value)
+    Ok(value_vert_shifted)
   }
 }
 
@@ -167,7 +168,7 @@ mod tests {
       min_temp: 0.0,
       max_temp: 1_000_000.0,
       phase_offset_rad: 0.0,
-      frequency_ms: 20_000,
+      period_ms: 20_000,
     };
 
     for t in (0..100_000).step_by(100) {
@@ -181,8 +182,40 @@ mod tests {
   }
 
   #[test]
+  /// Check that the generator returns to the same cycle
+  fn kelvin_sine_cycle_time_identical() {
+    let period_ms: u32 = 20_000;
+    let t1 = UNIX_EPOCH.elapsed().unwrap().as_micros();
+    let t2 = t1 + (u128::from(period_ms) * 1000);
+    let generator = KelvinSineGen {
+      min_temp: 0.0,
+      max_temp: 1_000_000.0,
+      phase_offset_rad: 0.0,
+      period_ms,
+    };
+    let val_t1 = generator.generate(t1);
+    let val_t2 = generator.generate(t2);
+
+    let val_t1 = val_t1.expect("Generator should not error");
+    let val_t2 = val_t2.expect("Generator should not error");
+
+    // TODO allow for some error margin
+    assert!(
+      approx_eq(val_t1, val_t2, 1e-6),
+      "After one period time, the generator should have returned to its original value ({:?}, t1: {}, t2: {})",
+      generator,
+      t1,
+      t2
+    );
+  }
+
+  #[test]
   #[ignore]
   fn kelvin_sine_phase_offset_accurate() {
     todo!();
+  }
+
+  fn approx_eq(a: f64, b: f64, epsilon: f64) -> bool {
+    (a - b).abs() < epsilon
   }
 }
