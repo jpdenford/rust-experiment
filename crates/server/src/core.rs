@@ -8,8 +8,11 @@ impl SensorId {
   pub fn new(id: u16) -> Self {
     SensorId(id)
   }
-  pub fn get(&self) -> u16 {
-    self.0
+}
+
+impl AsRef<u16> for SensorId {
+  fn as_ref(&self) -> &u16 {
+    &self.0
   }
 }
 

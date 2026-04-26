@@ -17,7 +17,7 @@ impl InfluxDbWriteableSafe for TemperatureReading {
       influxdb::Timestamp::Microseconds(self.ts_micro),
       name.into(),
     )
-    .add_tag("sensor_id", self.sensor_id.get())
+    .add_tag("sensor_id", self.sensor_id.as_ref())
     .add_field("value", self.value)
   }
 }
@@ -33,7 +33,7 @@ impl InfluxDbWriteableSafe for MsgProcessingError {
         is_ingestion_time,
         message,
       } => WriteQuery::new(influxdb::Timestamp::Microseconds(*ts_micro), name.into())
-        .add_tag("sensor_id", sensor_id.clone().map(|x| x.get()))
+        .add_tag("sensor_id", sensor_id.as_ref().map(|x| x.as_ref()))
         .add_field("raw_value", raw_value.clone())
         .add_field("error_code", error_code.clone())
         .add_field("message", message.clone())

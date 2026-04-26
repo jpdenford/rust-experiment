@@ -36,9 +36,9 @@ async fn main() {
   }
 }
 
-impl Into<IngestionConfig> for Args {
-  fn into(self) -> IngestionConfig {
-    match self.command {
+impl From<Args> for IngestionConfig {
+  fn from(value: Args) -> Self {
+    match value.command {
       config::SamplingMode::Live { .. } => todo!("Not yet implemented"),
       config::SamplingMode::Simulated {
         num_sensors,

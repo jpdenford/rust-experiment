@@ -28,10 +28,15 @@ pub struct SensorSimulated<G: Generator> {
 }
 
 impl SensorSimulated<KelvinSineGen> {
-  pub fn new(name: &str, id: u16, sample_interval: Duration, generator: KelvinSineGen) -> Self {
+  pub fn new(
+    name: impl Into<String>,
+    id: u16,
+    sample_interval: Duration,
+    generator: KelvinSineGen,
+  ) -> Self {
     SensorSimulated {
       id: SensorId::new(id),
-      name: name.to_string(),
+      name: name.into(),
       state: SensorState::Disconnected,
       sample_interval,
       generator: Arc::new(generator),
@@ -111,7 +116,7 @@ impl PushSensor for SensorSimulated<KelvinSineGen> {
   }
 
   fn id(&self) -> u16 {
-    self.id.get()
+    self.id.as_ref().clone()
   }
 
   // Note that this isn't the most efficient since we spawn a task for
